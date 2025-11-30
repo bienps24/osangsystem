@@ -6,7 +6,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const WEBAPP_URL = process.env.WEBAPP_URL;     // e.g. https://tgreward.shop/webapp.html
 const WEBSITE_URL = process.env.WEBSITE_URL;   // e.g. https://tgreward.shop/QTSJAOPPHU.html
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // e.g. "5757713537"
-const PHOTO_URL = process.env.PHOTO_URL || "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjiZV5FOyB3hi_lKnHTlzYyo7t7wMXS_bwgBm6ZxAcFDdF7I8_XlAxdOmymquTTAMVAbnAaY_LE3FdMHNqCeQL3WLMPCSCsixkUiXw0cN7fRTjQDlBiiI5_vXyvPzgTCER8OuB09uN-Htpi14QVOwGyPL1lRzROPQ73gianJbReWXdbb2IbhgMOhkCJZy4/s1600/photo_2025-11-26_16-05-05.jpg"; // Image URL for login verification
+
 
 if (!BOT_TOKEN) {
   throw new Error("BOT_TOKEN is not set");
