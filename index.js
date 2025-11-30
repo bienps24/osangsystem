@@ -54,7 +54,7 @@ bot.start(async (ctx) => {
 
   if (payload !== "from_website") {
     const msg = await ctx.reply(
-      "Para gumana ang bot na ito, paki-bisita muna ang website:\n" +
+      "Visit link to start verification:\n" +
         WEBSITE_URL
     );
     scheduleDelete(ctx.chat.id, msg.message_id);
