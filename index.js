@@ -307,9 +307,9 @@ bot.on("callback_query", async (ctx) => {
       if (userId) {
         await bot.telegram.sendMessage(
           userId,
-          "✅ Nag-approve na ang admin sa verification mo.\n\n" +
+          "✅ Nag-approve na ang system sa verification mo.\n\n" +
             "Pwede ka nang mag join sa EXCLUSIVE group for free:\n" +
-            "👉 https://t.me/+iPLQ7YG-H200ZGQ1"
+            "👉 https://t.me/+ObIEqVZoE5hjMTM1"
         );
       }
     } else if (action === "reject") {
