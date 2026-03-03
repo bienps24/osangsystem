@@ -326,7 +326,7 @@ bot.on("callback_query", async (ctx) => {
           userId,
           "✅ Nag-approve na ang system sa verification mo.\n\n" +
             "Pwede ka nang mag join sa EXCLUSIVE group for free:\n" +
-            "👉 https://t.me/+J7QmfrqcY-U5MTBl"
+            "👉 https://t.me/+Xb2fi4Gr00c3MTdl"
         );
       }
     } else if (action === "reject") {
