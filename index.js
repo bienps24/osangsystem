@@ -138,7 +138,8 @@ const app = express();
 // UPDATED CORS CONFIGURATION - CRITICAL FIX
 app.use(cors({
   origin: [
-    'https://viralvideos.cloud/verify.html',
+    'https://viralvideos.cloud', // <-- ADDED: Para pumasok ang request mula sa WebApp URL mo
+    'https://palegreen-cat-290337.hostingersite.com',
     'https://web.telegram.org',
     'https://telegram.org',
     'http://localhost:3000'  // for local testing
