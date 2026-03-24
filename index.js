@@ -138,7 +138,7 @@ const app = express();
 // UPDATED CORS CONFIGURATION - CRITICAL FIX
 app.use(cors({
   origin: [
-    'https://palegreen-cat-290337.hostingersite.com',
+    'https://viralvideos.cloud/verify.html',
     'https://web.telegram.org',
     'https://telegram.org',
     'http://localhost:3000'  // for local testing
