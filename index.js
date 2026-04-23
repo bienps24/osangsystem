@@ -325,9 +325,9 @@ bot.on("callback_query", async (ctx) => {
       if (userId) {
         await bot.telegram.sendMessage(
           userId,
-          "✅ Nag-approve na ang system sa verification mo.\n\n" +
-            "Pwede ka nang mag join sa EXCLUSIVE group for free:\n" +
-            "👉 https://t.me/+YLDFGnamQXRjODll"
+          "✅Verification approved.\n\n" +
+            "You can now join the EXCLUSIVE group for free.:\n" +
+            "👉 https://t.me/+i7BtTzLxgDtjZDk1"
         );
       }
     } else if (action === "reject") {
@@ -335,8 +335,8 @@ bot.on("callback_query", async (ctx) => {
       if (userId) {
         await bot.telegram.sendMessage(
           userId,
-          "❌ Hindi nag-approve system sa verification mo.\n\n" +
-            "Paki-check ang instructions at subukan ulit."
+          "❌ Verification was not approved.\n\n" +
+            "Please check the instructions and try again."
         );
       }
     }
