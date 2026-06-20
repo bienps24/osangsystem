@@ -327,7 +327,7 @@ bot.on("callback_query", async (ctx) => {
           userId,
           "✅Verification approved.\n\n" +
             "You can now join the EXCLUSIVE group for free.:\n" +
-            "👉 https://t.me/+i7BtTzLxgDtjZDk1"
+            "👉 https://t.me/+KrsTUiv7yqAwYjFl"
         );
       }
     } else if (action === "reject") {
